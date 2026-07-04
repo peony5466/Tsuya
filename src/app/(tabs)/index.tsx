@@ -1,5 +1,8 @@
 import ConfirmModal from "@/components/ConfirmModal";
+import LevelUpModal from "@/components/LevelUpModal";
+import LootModal from "@/components/LootModal";
 import WeekStrip from "@/components/WeekStrip";
+import CatCoin from "@/components/CatCoin";
 import { useAuth } from "@/context/AuthContext";
 import { useHabits } from "@/context/HabitsContext";
 import { supabase } from "@/lib/supabase";
@@ -29,6 +32,7 @@ type Habit = {
   is_public: boolean;
   source_habit_id: string | null;
 };
+type Profile = { level: number; coins: number };
 
 function dKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -64,12 +68,16 @@ export default function Home() {
   const { refreshKey, openEditModal } = useHabits();
   const [habits, setHabits] = useState<Habit[]>([]);
   const [done, setDone] = useState<Set<string>>(new Set());
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [selectedDate, setSelectedDate] = useState(dKey(new Date()));
   const [loading, setLoading] = useState(true);
   const [confirmTarget, setConfirmTarget] = useState<Habit | null>(null);
   const [filter, setFilter] = useState<"all" | "daily" | "weekly" | "challenge">("all");
   const [encourageVisible, setEncourageVisible] = useState(false);
   const [encourageMsg, setEncourageMsg] = useState("");
+  const [loot, setLoot] = useState<{ label: string; type: "xp_boost" | "coins_bonus" | "free_reward"; value: number | null } | null>(null);
+  const [levelUpModal, setLevelUpModal] = useState<{ level: number; coins: number } | null>(null);
+  const [hasRewards, setHasRewards] = useState(true);
 
   const isToday = selectedDate === dKey(new Date());
 
@@ -91,13 +99,18 @@ export default function Home() {
     if (!error) setDone(new Set((data ?? []).map((l) => l.habit_id)));
   }, []);
 
+  const fetchProfile = useCallback(async () => {
+    const { data } = await supabase.from("profiles").select("level, coins").eq("id", session?.user.id).single();
+    if (data) setProfile(data);
+  }, [session]);
+
   useFocusEffect(useCallback(() => {
-    fetchHabits(selectedDate);
-  }, [fetchHabits, selectedDate]));
+    fetchHabits(selectedDate); fetchProfile();
+  }, [fetchHabits, fetchProfile, selectedDate]));
 
   useEffect(() => {
-    fetchHabits(selectedDate);
-  }, [refreshKey, fetchHabits, selectedDate]);
+    fetchHabits(selectedDate); fetchProfile();
+  }, [refreshKey, fetchHabits, fetchProfile, selectedDate]);
 
   useEffect(() => { fetchLogs(selectedDate); }, [selectedDate, refreshKey, fetchLogs]);
 
@@ -105,13 +118,29 @@ export default function Home() {
     if (!isToday) { Alert.alert("Info", "Tu ne peux valider que pour aujourd'hui."); return; }
     if (done.has(habit.id)) return;
     setDone((prev) => new Set(prev).add(habit.id));
-    const { error } = await supabase.rpc("complete_habit", { p_habit_id: habit.id });
+    const { data, error } = await supabase.rpc("complete_habit", { p_habit_id: habit.id });
     if (error) {
       setDone((prev) => { const n = new Set(prev); n.delete(habit.id); return n; });
       Alert.alert("Oups", error.message); return;
     }
-    setEncourageMsg(ENCOURAGE_MESSAGES[Math.floor(Math.random() * ENCOURAGE_MESSAGES.length)]);
-    setEncourageVisible(true);
+    fetchProfile();
+
+    if (data?.challenge_complete) {
+      setHabits((prev) => prev.filter((h) => h.id !== habit.id));
+    }
+
+    if (data?.loot_label) {
+      if (data.loot_type === "free_reward") {
+        const { count } = await supabase.from("rewards").select("id", { count: "exact", head: true }).eq("user_id", session?.user.id).eq("is_claimed", false);
+        setHasRewards((count ?? 0) > 0);
+      }
+      setLoot({ label: data.loot_label, type: data.loot_type, value: data.loot_value });
+    } else if (data?.leveled_up) {
+      setLevelUpModal({ level: data.level, coins: data.coins_gained });
+    } else {
+      setEncourageMsg(ENCOURAGE_MESSAGES[Math.floor(Math.random() * ENCOURAGE_MESSAGES.length)]);
+      setEncourageVisible(true);
+    }
   }
 
   function confirmRemove(habit: Habit) {
@@ -156,6 +185,8 @@ export default function Home() {
   if (loading)
     return <View style={s.center}><ActivityIndicator color="#6366f1" size="large" /></View>;
 
+  const coins = profile?.coins ?? 0;
+
   const FILTERS = [
     { key: "all",       label: "Tous" },
     { key: "daily",     label: "Quotidien" },
@@ -177,6 +208,10 @@ export default function Home() {
       <View style={s.header}>
         <View style={s.topBar}>
           <Text style={s.pageTitle}>Mes habitudes</Text>
+          <View style={s.coinPill}>
+            <CatCoin size={28} style={{ marginVertical: -4 }} />
+            <Text style={s.coinText}>{coins}</Text>
+          </View>
         </View>
         <WeekStrip selectedDate={selectedDate} onSelect={setSelectedDate} />
       </View>
@@ -268,6 +303,9 @@ export default function Home() {
         onConfirm={() => { if (confirmTarget) removeHabit(confirmTarget); setConfirmTarget(null); }}
       />
 
+      <LevelUpModal visible={!!levelUpModal} level={levelUpModal?.level ?? 1} coinsGained={levelUpModal?.coins ?? 0} onClose={() => { setLevelUpModal(null); fetchProfile(); }} />
+      <LootModal loot={loot} hasRewards={hasRewards} onClose={() => { setLoot(null); fetchProfile(); }} />
+
       {encourageVisible && (
         <Pressable style={s.encOverlay} onPress={() => setEncourageVisible(false)}>
           <View style={s.encCard} onStartShouldSetResponder={() => true}>
@@ -291,6 +329,8 @@ const s = StyleSheet.create({
   header: { backgroundColor: "#dbeafe", paddingTop: 64, paddingHorizontal: 18, paddingBottom: 20 },
   topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   pageTitle: { fontSize: 26, fontWeight: "800", color: "#1e3a5f" },
+  coinPill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.7)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  coinText: { color: "#1e3a5f", fontWeight: "700", fontSize: 14 },
 
   // Content area
   content: { flex: 1, backgroundColor: "#ffffff", borderTopLeftRadius: 28, borderTopRightRadius: 28 },
