@@ -1,6 +1,7 @@
 import ConfirmModal from "@/components/ConfirmModal";
 import LevelUpModal from "@/components/LevelUpModal";
 import LootModal from "@/components/LootModal";
+import StreakModal from "@/components/StreakModal";
 import WeekStrip from "@/components/WeekStrip";
 import CatCoin from "@/components/CatCoin";
 import { useAuth } from "@/context/AuthContext";
@@ -36,6 +37,16 @@ type Profile = { level: number; coins: number };
 
 function dKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function computeStreak(dates: Set<string>) {
+  const dayMs = 86400000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  let cursor = new Date(today);
+  if (!dates.has(dKey(cursor))) { cursor = new Date(today.getTime() - dayMs); if (!dates.has(dKey(cursor))) return 0; }
+  let streak = 0;
+  while (dates.has(dKey(cursor))) { streak++; cursor = new Date(cursor.getTime() - dayMs); }
+  return streak;
 }
 
 // Arc gauge component — 270° track, fills based on percent
@@ -78,6 +89,8 @@ export default function Home() {
   const [loot, setLoot] = useState<{ label: string; type: "xp_boost" | "coins_bonus" | "free_reward"; value: number | null } | null>(null);
   const [levelUpModal, setLevelUpModal] = useState<{ level: number; coins: number } | null>(null);
   const [hasRewards, setHasRewards] = useState(true);
+  const [streak, setStreak] = useState(0);
+  const [streakOpen, setStreakOpen] = useState(false);
 
   const isToday = selectedDate === dKey(new Date());
 
@@ -104,13 +117,19 @@ export default function Home() {
     if (data) setProfile(data);
   }, [session]);
 
+  const fetchStreak = useCallback(async () => {
+    const { data } = await supabase.from("habit_logs").select("completed_on");
+    const dates = new Set((data ?? []).map((l) => l.completed_on as string));
+    setStreak(computeStreak(dates));
+  }, []);
+
   useFocusEffect(useCallback(() => {
-    fetchHabits(selectedDate); fetchProfile();
-  }, [fetchHabits, fetchProfile, selectedDate]));
+    fetchHabits(selectedDate); fetchProfile(); fetchStreak();
+  }, [fetchHabits, fetchProfile, fetchStreak, selectedDate]));
 
   useEffect(() => {
-    fetchHabits(selectedDate); fetchProfile();
-  }, [refreshKey, fetchHabits, fetchProfile, selectedDate]);
+    fetchHabits(selectedDate); fetchProfile(); fetchStreak();
+  }, [refreshKey, fetchHabits, fetchProfile, fetchStreak, selectedDate]);
 
   useEffect(() => { fetchLogs(selectedDate); }, [selectedDate, refreshKey, fetchLogs]);
 
@@ -124,6 +143,7 @@ export default function Home() {
       Alert.alert("Oups", error.message); return;
     }
     fetchProfile();
+    fetchStreak();
 
     if (data?.challenge_complete) {
       setHabits((prev) => prev.filter((h) => h.id !== habit.id));
@@ -208,9 +228,15 @@ export default function Home() {
       <View style={s.header}>
         <View style={s.topBar}>
           <Text style={s.pageTitle}>Mes habitudes</Text>
-          <View style={s.coinPill}>
-            <CatCoin size={28} style={{ marginVertical: -4 }} />
-            <Text style={s.coinText}>{coins}</Text>
+          <View style={s.topRight}>
+            <View style={s.coinPill}>
+              <CatCoin size={28} style={{ marginVertical: -4 }} />
+              <Text style={s.coinText}>{coins}</Text>
+            </View>
+            <Pressable style={s.flamePill} onPress={() => setStreakOpen(true)}>
+              <Ionicons name="flame" size={15} color="#f97316" />
+              <Text style={s.flameText}>{streak}</Text>
+            </Pressable>
           </View>
         </View>
         <WeekStrip selectedDate={selectedDate} onSelect={setSelectedDate} />
@@ -303,6 +329,7 @@ export default function Home() {
         onConfirm={() => { if (confirmTarget) removeHabit(confirmTarget); setConfirmTarget(null); }}
       />
 
+      <StreakModal visible={streakOpen} onClose={() => setStreakOpen(false)} />
       <LevelUpModal visible={!!levelUpModal} level={levelUpModal?.level ?? 1} coinsGained={levelUpModal?.coins ?? 0} onClose={() => { setLevelUpModal(null); fetchProfile(); }} />
       <LootModal loot={loot} hasRewards={hasRewards} onClose={() => { setLoot(null); fetchProfile(); }} />
 
@@ -329,8 +356,11 @@ const s = StyleSheet.create({
   header: { backgroundColor: "#dbeafe", paddingTop: 64, paddingHorizontal: 18, paddingBottom: 20 },
   topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   pageTitle: { fontSize: 26, fontWeight: "800", color: "#1e3a5f" },
+  topRight: { flexDirection: "row", gap: 8 },
   coinPill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.7)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
   coinText: { color: "#1e3a5f", fontWeight: "700", fontSize: 14 },
+  flamePill: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(255,255,255,0.7)", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20 },
+  flameText: { color: "#ea580c", fontWeight: "700", fontSize: 14 },
 
   // Content area
   content: { flex: 1, backgroundColor: "#ffffff", borderTopLeftRadius: 28, borderTopRightRadius: 28 },
