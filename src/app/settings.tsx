@@ -1,6 +1,5 @@
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/lib/supabase";
-import { scheduleHabitReminder, scheduleStreakAlert } from "@/lib/notifications";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
@@ -51,20 +50,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function Settings() {
-  const { session, isAnonymous } = useAuth();
+  const { session } = useAuth();
   const [notifHabits, setNotifHabits] = useState(true);
   const [notifStreak, setNotifStreak] = useState(true);
   const [notifBadges, setNotifBadges] = useState(true);
-
-  function toggleHabitReminder(val: boolean) {
-    setNotifHabits(val);
-    scheduleHabitReminder(val);
-  }
-
-  function toggleStreakAlert(val: boolean) {
-    setNotifStreak(val);
-    scheduleStreakAlert(val);
-  }
   const [emailModal, setEmailModal] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [savingEmail, setSavingEmail] = useState(false);
@@ -133,35 +122,19 @@ export default function Settings() {
       </View>
 
       {/* Compte */}
-      {isAnonymous ? (
-        <Section title="COMPTE">
-          <Row
-            icon="person-add-outline"
-            label="Créer un compte"
-            sublabel="Sauvegarde ta progression"
-            onPress={() => router.push("/(auth)/register" as any)}
-          />
-          <Row
-            icon="log-in-outline"
-            label="Se connecter"
-            onPress={() => router.push("/(auth)/login" as any)}
-          />
-        </Section>
-      ) : (
-        <Section title="COMPTE">
-          <Row
-            icon="mail-outline"
-            label="Changer l'email"
-            sublabel={session?.user.email ?? ""}
-            onPress={() => { setNewEmail(""); setEmailModal(true); }}
-          />
-          <Row
-            icon="lock-closed-outline"
-            label="Modifier le mot de passe"
-            onPress={() => { setNewPwd(""); setConfirmPwd(""); setPwdModal(true); }}
-          />
-        </Section>
-      )}
+      <Section title="COMPTE">
+        <Row
+          icon="mail-outline"
+          label="Changer l'email"
+          sublabel={session?.user.email ?? ""}
+          onPress={() => { setNewEmail(""); setEmailModal(true); }}
+        />
+        <Row
+          icon="lock-closed-outline"
+          label="Modifier le mot de passe"
+          onPress={() => { setNewPwd(""); setConfirmPwd(""); setPwdModal(true); }}
+        />
+      </Section>
 
       {/* Notifications */}
       <Section title="NOTIFICATIONS">
@@ -172,7 +145,7 @@ export default function Settings() {
           right={
             <Switch
               value={notifHabits}
-              onValueChange={toggleHabitReminder}
+              onValueChange={setNotifHabits}
               trackColor={{ false: "#e2e8f0", true: "#93c5fd" }}
               thumbColor={notifHabits ? "#1d4ed8" : "#f4f4f5"}
             />
@@ -185,7 +158,7 @@ export default function Settings() {
           right={
             <Switch
               value={notifStreak}
-              onValueChange={toggleStreakAlert}
+              onValueChange={setNotifStreak}
               trackColor={{ false: "#e2e8f0", true: "#93c5fd" }}
               thumbColor={notifStreak ? "#1d4ed8" : "#f4f4f5"}
             />
@@ -223,33 +196,20 @@ export default function Settings() {
       </Section>
 
       {/* Danger zone */}
-      {!isAnonymous && (
-        <Section title="COMPTE">
-          <Row
-            icon="log-out-outline"
-            label="Se déconnecter"
-            destructive
-            onPress={signOut}
-          />
-          <Row
-            icon="trash-outline"
-            label="Supprimer mon compte"
-            destructive
-            onPress={deleteAccount}
-          />
-        </Section>
-      )}
-
-      {isAnonymous && (
-        <Section title="SESSION">
-          <Row
-            icon="log-out-outline"
-            label="Quitter le mode invité"
-            destructive
-            onPress={signOut}
-          />
-        </Section>
-      )}
+      <Section title="COMPTE">
+        <Row
+          icon="log-out-outline"
+          label="Se déconnecter"
+          destructive
+          onPress={signOut}
+        />
+        <Row
+          icon="trash-outline"
+          label="Supprimer mon compte"
+          destructive
+          onPress={deleteAccount}
+        />
+      </Section>
 
       <View style={{ height: 40 }} />
 
