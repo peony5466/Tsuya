@@ -5,8 +5,6 @@ import { supabase } from "@/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import CatCoin from "@/components/CatCoin";
 import * as ImagePicker from "expo-image-picker";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
 import { decode } from "base64-arraybuffer";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
@@ -19,6 +17,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -193,15 +192,7 @@ export default function Profil() {
         csv += `"${title}",${l.completed_on},${xp}\n`;
       });
 
-      const path = FileSystem.documentDirectory + `tsuya_export_${Date.now()}.csv`;
-      await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
-
-      const canShare = await Sharing.isAvailableAsync();
-      if (canShare) {
-        await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Exporter mes données Tsuya" });
-      } else {
-        Alert.alert("Export réussi", "Fichier CSV généré sur l'appareil.");
-      }
+      await Share.share({ message: csv, title: "Exporter mes données Tsuya" });
     } catch (e: any) {
       Alert.alert("Erreur export", e.message);
     } finally {
@@ -568,7 +559,7 @@ function makeStyles(t: Theme) {
     viewToggleActiveText: { color: t.text },
 
     // Export
-    exportBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 24, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 12, backgroundColor: "#eff6ff", borderWidth: 1, borderColor: "#bfdbfe" },
+    exportBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 12, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 12, backgroundColor: "#eff6ff", borderWidth: 1, borderColor: "#bfdbfe" },
     exportText: { color: "#3b82f6", fontWeight: "700", fontSize: 14 },
 
     // Sign out
