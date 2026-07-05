@@ -6,6 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import CatCoin from "@/components/CatCoin";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { decode } from "base64-arraybuffer";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
@@ -75,6 +76,7 @@ export default function Profil() {
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [saving, setSaving] = useState(false);
   const [calView, setCalView] = useState<"heatmap" | "calendar">("heatmap");
+  const [exporting, setExporting] = useState(false);
 
   const fetchProfile = useCallback(async () => {
     if (!session) return;
@@ -153,6 +155,58 @@ export default function Profil() {
     setEditOpen(false);
     supabase.rpc("check_badges", { p_user_id: session?.user.id });
     fetchProfile();
+  }
+
+  async function exportCSV() {
+    if (!session || !profile) return;
+    setExporting(true);
+    try {
+      const [{ data: habitsData }, { data: logsData }] = await Promise.all([
+        supabase
+          .from("habits")
+          .select("title, frequency, xp_reward, created_at")
+          .eq("user_id", session.user.id)
+          .eq("is_active", true)
+          .is("source_habit_id", null),
+        supabase
+          .from("habit_logs")
+          .select("completed_on, habits(title, xp_reward)")
+          .eq("user_id", session.user.id)
+          .order("completed_on", { ascending: false }),
+      ]);
+
+      let csv = "PROFIL\n";
+      csv += "Pseudo,Niveau,XP Total,Coins\n";
+      csv += `"${profile.pseudo}",${profile.level},${profile.xp_total},${profile.coins}\n\n`;
+
+      csv += "HABITUDES\n";
+      csv += "Titre,Frequence,XP recompense,Creee le\n";
+      (habitsData ?? []).forEach((h) => {
+        csv += `"${h.title}",${h.frequency},${h.xp_reward},${h.created_at?.slice(0, 10)}\n`;
+      });
+
+      csv += "\nHISTORIQUE DES COMPLETIONS\n";
+      csv += "Habitude,Date,XP gagne\n";
+      (logsData ?? []).forEach((l: any) => {
+        const title = l.habits?.title ?? "";
+        const xp = l.habits?.xp_reward ?? "";
+        csv += `"${title}",${l.completed_on},${xp}\n`;
+      });
+
+      const path = FileSystem.documentDirectory + `tsuya_export_${Date.now()}.csv`;
+      await FileSystem.writeAsStringAsync(path, csv, { encoding: FileSystem.EncodingType.UTF8 });
+
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Exporter mes données Tsuya" });
+      } else {
+        Alert.alert("Export réussi", "Fichier CSV généré sur l'appareil.");
+      }
+    } catch (e: any) {
+      Alert.alert("Erreur export", e.message);
+    } finally {
+      setExporting(false);
+    }
   }
 
   if (loading) return <View style={s.center}><ActivityIndicator /></View>;
@@ -325,6 +379,12 @@ export default function Profil() {
         </View>
         {calView === "heatmap" ? <Heatmap hideTitle /> : <MonthCalendar />}
       </View>
+
+      {/* Export CSV */}
+      <Pressable style={s.exportBtn} onPress={exportCSV} disabled={exporting}>
+        <Ionicons name="download-outline" size={16} color="#3b82f6" />
+        <Text style={s.exportText}>{exporting ? "Export en cours..." : "Exporter mes données (CSV)"}</Text>
+      </Pressable>
 
       {/* Sign out */}
       <Pressable style={s.signOutBtn} onPress={() => supabase.auth.signOut()}>
@@ -507,8 +567,12 @@ function makeStyles(t: Theme) {
     viewToggleText: { fontSize: 13, fontWeight: "600", color: t.textSecondary },
     viewToggleActiveText: { color: t.text },
 
+    // Export
+    exportBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 24, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 12, backgroundColor: "#eff6ff", borderWidth: 1, borderColor: "#bfdbfe" },
+    exportText: { color: "#3b82f6", fontWeight: "700", fontSize: 14 },
+
     // Sign out
-    signOutBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 24, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 12, backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fecaca" },
+    signOutBtn: { flexDirection: "row", alignItems: "center", gap: 8, marginHorizontal: 20, marginTop: 12, paddingVertical: 14, paddingHorizontal: 20, borderRadius: 12, backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fecaca" },
     signOutText: { color: "#ef4444", fontWeight: "700", fontSize: 14 },
 
     // Modal
